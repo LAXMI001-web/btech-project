@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FA3-CLIP · Face Attack Detector</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- Signature element: ambient/reactive frequency-spectrum strip -->
+<div id="spectrum-strip" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">FA³</span>
+    <div class="brand-text">
+      <span class="brand-title">FA3-CLIP</span>
+      <span class="brand-sub">Face Attack Detector</span>
+    </div>
+  </div>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab-btn active" data-tab="analyze" role="tab">Analyze</button>
+    <button class="tab-btn" data-tab="compare" role="tab">Compare</button>
+    <button class="tab-btn" data-tab="live" role="tab">Live Detection</button>
+    <button class="tab-btn" data-tab="video" role="tab">Video</button>
+    <button class="tab-btn" data-tab="history" role="tab">History</button>
+    <button class="tab-btn" data-tab="model" role="tab">Model</button>
+    <button class="tab-btn" data-tab="about" role="tab">About</button>
+  </nav>
+
+  <div class="topbar-actions">
+    <span id="conn-badge" class="pill pill-connecting" title="Backend connectivity">● checking</span>
+    <span id="mode-pill" class="pill pill-demo">DEMO MODE</span>
+    <label class="checkbox-row" title="Show raw logits, fusion balance, EXIF, device">
+      <input type="checkbox" id="advanced-toggle"> Advanced
+    </label>
+    <button id="theme-toggle" class="icon-btn" title="Toggle theme">◐</button>
+  </div>
+</header>
+
+<main id="app">
+
+  <!-- ============ ANALYZE TAB ============ -->
+  <section id="tab-analyze" class="tab-panel active">
+    <div class="grid-2">
+      <div class="panel">
+        <h2>Upload evidence</h2>
+        <p class="hint">Drop one or more images, or click to browse. JPG / PNG / WEBP, up to 12MB each, 20 per batch.</p>
+
+        <div id="dropzone" class="dropzone">
+          <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
+          <div class="dropzone-inner">
+            <div class="dropzone-icon">⤓</div>
+            <div><strong>Drag &amp; drop</strong> images here, or <span class="link">browse</span></div>
+          </div>
+        </div>
+
+        <div class="control-row">
+          <label for="url-input">Or analyze an image URL</label>
+          <div class="url-row">
+            <input id="url-input" type="url" placeholder="https://example.com/photo.jpg">
+            <button id="url-analyze" class="btn">Analyze URL</button>
+          </div>
+        </div>
+
+        <div class="control-row">
+          <label for="threshold-slider">Decision threshold: <span id="threshold-value">50%</span></label>
+          <input id="threshold-slider" type="range" min="1" max="99" value="50">
+          <p class="hint small">Raise it to only flag high-confidence fakes; lower it to catch more borderline cases.</p>
+        </div>
+
+        <div id="batch-summary" class="batch-summary hidden"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Results</h2>
+        <div id="results-gallery" class="results-gallery">
+          <p class="empty-state">No images analyzed yet. Upload something on the left to see results here.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ COMPARE TAB ============ -->
+  <section id="tab-compare" class="tab-panel">
+    <div class="grid-2">
+      <div class="panel">
+        <h2>Image A</h2>
+        <div class="dropzone compare-drop" data-slot="a">
+          <input type="file" accept="image/png,image/jpeg,image/webp" hidden>
+          <div class="dropzone-inner"><div class="dropzone-icon">⤓</div><div>Drop or <span class="link">browse</span></div></div>
+        </div>
+        <div id="compare-result-a" class="compare-result"></div>
+      </div>
+      <div class="panel">
+        <h2>Image B</h2>
+        <div class="dropzone compare-drop" data-slot="b">
+          <input type="file" accept="image/png,image/jpeg,image/webp" hidden>
+          <div class="dropzone-inner"><div class="dropzone-icon">⤓</div><div>Drop or <span class="link">browse</span></div></div>
+        </div>
+        <div id="compare-result-b" class="compare-result"></div>
+      </div>
+    </div>
+    <div id="compare-verdict" class="panel compare-verdict hidden"></div>
+  </section>
+
+  <!-- ============ LIVE TAB ============ -->
+  <section id="tab-live" class="tab-panel">
+    <div class="grid-2">
+      <div class="panel">
+        <h2>Live camera feed</h2>
+        <p class="hint">Runs face-attack detection on your webcam in real time, entirely in your browser session.</p>
+
+        <div class="video-wrap">
+          <video id="live-video" autoplay playsinline muted></video>
+          <canvas id="live-overlay"></canvas>
+          <div id="live-label" class="live-label hidden">—</div>
+        </div>
+
+        <div class="control-row live-controls">
+          <button id="live-toggle" class="btn btn-primary">Start camera</button>
+          <button id="live-snapshot" class="btn" disabled>Save snapshot to history</button>
+          <label class="checkbox-row">
+            <input type="checkbox" id="live-boxes" checked> Face box overlay
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" id="live-sound"> Alert sound on FAKE
+          </label>
+        </div>
+
+        <div class="stat-row">
+          <div class="stat"><span id="live-fps">0</span><label>fps (analysis)</label></div>
+          <div class="stat"><span id="live-latency">0</span><label>ms / frame</label></div>
+          <div class="stat"><span id="live-count">0</span><label>frames analyzed</label></div>
+        </div>
+
+        <div class="control-row">
+          <label for="live-interval">Analysis interval: <span id="live-interval-value">700</span>ms</label>
+          <input id="live-interval" type="range" min="200" max="2000" step="100" value="700">
+          <p class="hint small">Lower = more frequent checks but higher CPU/GPU load. Press <kbd>Space</kbd> to snapshot while live.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Live confidence</h2>
+        <div class="meter-block">
+          <div class="meter"><div id="live-meter-fill" class="meter-fill"></div></div>
+          <div class="meter-labels"><span>REAL</span><span>FAKE</span></div>
+        </div>
+        <canvas id="live-chart" height="180"></canvas>
+        <p class="hint small">Rolling fake-probability over the last 60 analyzed frames.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VIDEO TAB ============ -->
+  <section id="tab-video" class="tab-panel">
+    <div class="grid-2">
+      <div class="panel">
+        <h2>Upload a video file</h2>
+        <p class="hint">Frames are sampled client-side and sent for per-frame analysis — no video is uploaded whole.</p>
+        <input id="video-file-input" type="file" accept="video/*">
+        <video id="video-preview" controls hidden></video>
+        <div class="control-row">
+          <label for="video-fps">Sample rate: <span id="video-fps-value">1</span> frame(s)/sec</label>
+          <input id="video-fps" type="range" min="1" max="5" value="1">
+        </div>
+        <button id="video-analyze" class="btn btn-primary" disabled>Analyze video</button>
+        <div id="video-progress" class="hint small"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Per-frame timeline</h2>
+        <div id="video-timeline" class="video-timeline">
+          <p class="empty-state">No video analyzed yet.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ HISTORY TAB ============ -->
+  <section id="tab-history" class="tab-panel">
+    <div class="panel">
+      <div class="history-head">
+        <h2>Session history</h2>
+        <div class="history-actions">
+          <button id="export-csv" class="btn">Export CSV</button>
+          <button id="export-json" class="btn">Export JSON</button>
+          <button id="print-report" class="btn">Print / Save PDF report</button>
+          <button id="clear-history" class="btn btn-danger">Clear</button>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div>
+          <canvas id="donut-chart" height="220"></canvas>
+        </div>
+        <div>
+          <canvas id="dist-chart" height="220"></canvas>
+        </div>
+      </div>
+
+      <table class="history-table">
+        <thead><tr><th></th><th>Source</th><th>Label</th><th>Confidence</th><th>Time</th><th></th></tr></thead>
+        <tbody id="history-body"></tbody>
+      </table>
+      <p id="history-empty" class="empty-state">Nothing analyzed this session yet.</p>
+    </div>
+  </section>
+
+  <!-- ============ MODEL TAB ============ -->
+  <section id="tab-model" class="tab-panel">
+    <div class="grid-2">
+      <div class="panel">
+        <h2>Model info</h2>
+        <div id="model-info-body" class="model-info">Loading…</div>
+      </div>
+      <div class="panel">
+        <h2>Spatial / frequency fusion balance</h2>
+        <p class="hint small">The model's learned β — how much weight the spatial CLIP branch gets vs. the FFT frequency branch. Only meaningful once the real checkpoint is loaded.</p>
+        <div class="meter-block">
+          <div class="meter"><div id="fusion-meter-fill" class="meter-fill"></div></div>
+          <div class="meter-labels"><span>Frequency branch</span><span>Spatial branch</span></div>
+        </div>
+        <div id="fusion-value" class="hint small"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Architecture diagram</h2>
+      <svg id="arch-diagram" viewBox="0 0 920 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="FA3-CLIP architecture diagram">
+        <style>
+          .ad-box{fill:var(--panel-raised); stroke:var(--line); stroke-width:1.5; rx:8;}
+          .ad-box.accent{stroke:var(--real);}
+          .ad-box.accent2{stroke:var(--fake);}
+          .ad-text{font-family:var(--font-mono); font-size:12px; fill:var(--text);}
+          .ad-label{font-family:var(--font-display); font-size:13px; font-weight:600; fill:var(--text);}
+          .ad-arrow{stroke:var(--text-dim); stroke-width:1.5; fill:none; marker-end:url(#ad-arrowhead);}
+        </style>
+        <defs>
+          <marker id="ad-arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="var(--text-dim)"/>
+          </marker>
+        </defs>
+
+        <rect x="20" y="140" width="90" height="50" class="ad-box"/>
+        <text x="65" y="170" text-anchor="middle" class="ad-label">Image</text>
+
+        <path class="ad-arrow" d="M110,155 C140,120 150,80 180,70"/>
+        <path class="ad-arrow" d="M110,175 C140,210 150,250 180,260"/>
+
+        <rect x="180" y="45" width="190" height="55" class="ad-box accent"/>
+        <text x="275" y="68" text-anchor="middle" class="ad-label">Spatial branch</text>
+        <text x="275" y="86" text-anchor="middle" class="ad-text">CLIP ViT-B/32 vision encoder</text>
+
+        <rect x="180" y="235" width="190" height="70" class="ad-box accent2"/>
+        <text x="275" y="256" text-anchor="middle" class="ad-label">Frequency branch</text>
+        <text x="275" y="274" text-anchor="middle" class="ad-text">FFT high-pass filter</text>
+        <text x="275" y="291" text-anchor="middle" class="ad-text">→ small CNN encoder</text>
+
+        <path class="ad-arrow" d="M370,72 C420,90 430,140 460,160"/>
+        <path class="ad-arrow" d="M370,270 C420,240 430,190 460,170"/>
+
+        <rect x="460" y="140" width="150" height="50" class="ad-box"/>
+        <text x="535" y="162" text-anchor="middle" class="ad-label">Fusion (β)</text>
+        <text x="535" y="180" text-anchor="middle" class="ad-text">β·spatial + (1−β)·freq</text>
+
+        <path class="ad-arrow" d="M610,165 L650,165"/>
+
+        <rect x="650" y="140" width="110" height="50" class="ad-box"/>
+        <text x="705" y="162" text-anchor="middle" class="ad-label">LayerNorm</text>
+        <text x="705" y="180" text-anchor="middle" class="ad-text">image features</text>
+
+        <rect x="650" y="20" width="220" height="70" class="ad-box"/>
+        <text x="760" y="41" text-anchor="middle" class="ad-label">Prompt text branch</text>
+        <text x="760" y="58" text-anchor="middle" class="ad-text">"a fake face" / "a live real face"</text>
+        <text x="760" y="75" text-anchor="middle" class="ad-text">+ learnable context &amp; bias</text>
+
+        <path class="ad-arrow" d="M760,90 L760,120 L780,140"/>
+        <path class="ad-arrow" d="M705,140 L750,105"/>
+
+        <rect x="740" y="230" width="160" height="60" class="ad-box"/>
+        <text x="820" y="252" text-anchor="middle" class="ad-label">Cosine similarity</text>
+        <text x="820" y="270" text-anchor="middle" class="ad-text">→ softmax → REAL / FAKE</text>
+
+        <path class="ad-arrow" d="M760,190 L800,230"/>
+      </svg>
+    </div>
+  </section>
+
+  <!-- ============ ABOUT TAB ============ -->
+  <section id="tab-about" class="tab-panel">
+    <div class="panel about-panel">
+      <h2>How FA3-CLIP works</h2>
+      <div class="accordion">
+        <details open>
+          <summary>Spatial + frequency fusion</summary>
+          <p>FA3-CLIP pairs a CLIP vision transformer with a frequency-domain branch built on the Discrete Cosine Transform. Generation artifacts that are nearly invisible in raw pixels — blending seams, upsampling checkerboarding, GAN/diffusion texture — leave a distinct signature in frequency space, so fusing both views catches attacks that a spatial-only model misses.</p>
+        </details>
+        <details>
+          <summary>Attack-agnostic prompts</summary>
+          <p>Instead of a separate detector per attack type (printed photo, replay, faceswap, reenactment, diffusion-generated), FA3-CLIP learns generic "live" and "fake" prompts in CLIP's language branch, so one unified model covers physical and digital attacks alike.</p>
+        </details>
+        <details>
+          <summary>What the spectrum strip shows</summary>
+          <p>The bar strip at the top of the page is a live row-wise high-frequency energy profile computed from the most recently analyzed image — the same kind of signal the frequency branch consumes.</p>
+        </details>
+        <details>
+          <summary>Datasets used for training</summary>
+          <p id="about-datasets">Loading…</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div id="toast-container"></div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
