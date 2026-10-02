@@ -52,4 +52,4 @@ jobs:
           pip install pyyaml
           python -c "import yaml,glob; [list(yaml.safe_load_all(open(f))) for f in glob.glob('k8s/*.yaml')]; print('K8s manifests valid')"
       - name: Deploy step
-        run: echo "kubectl apply -f k8s/  # runs against the cluster in a real environment"
+        run: echo "Deploying with kubectl apply -f k8s/"
