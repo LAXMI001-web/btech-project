@@ -126,7 +126,7 @@ class FA3ClipDetector:
         with self.torch.no_grad():
             hp = FA3CLIPForImageClassification._high_pass_map(pixel_values)[0]
         mag = hp.abs().mean(dim=0).cpu().numpy()
-        mag = (mag - mag.min()) / (mag.ptp() + 1e-6)
+        mag = (mag - mag.min()) / (np.ptp(mag) + 1e-6)
         return self._colorize(mag)
 
     @staticmethod
@@ -158,7 +158,7 @@ class FA3ClipDetector:
             from .fa3_model import FA3CLIPForImageClassification
             hp = FA3CLIPForImageClassification._high_pass_map(inputs["pixel_values"])[0]
             row_profile = hp.abs().mean(dim=0).mean(dim=1).cpu().numpy()
-        row_profile = (row_profile - row_profile.min()) / (row_profile.ptp() + 1e-6)
+        row_profile = (row_profile - row_profile.min()) / (np.ptp(row_profile) + 1e-6)
         buckets = np.array_split(row_profile, 40)
         spectrum = [float(np.clip(b.mean(), 0, 1)) for b in buckets]
 
@@ -202,7 +202,7 @@ class FA3ClipDetector:
         gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
 
         energy = self._dct_energy_map(gray)
-        energy_norm = (energy - energy.min()) / (energy.ptp() + 1e-6)
+        energy_norm = (energy - energy.min()) / (np.ptp(energy) + 1e-6)
 
         noise = cv2.Laplacian(gray, cv2.CV_64F)
         noise_var = float(np.var(noise))

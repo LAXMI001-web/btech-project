@@ -1,0 +1,65 @@
+---
+- name: Configure runtime environment for DeepGuard
+  hosts: app_servers
+  become: true
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      apt:
+        name: [git, curl, python3, python3-pip, docker.io]
+        state: present
+
+    - name: Create application group
+      group:
+        name: "{{ app_user }}"
+        state: present
+
+    - name: Create application user
+      user:
+        name: "{{ app_user }}"
+        group: "{{ app_user }}"
+        shell: /bin/bash
+        create_home: yes
+
+    - name: Create application directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0755"
+
+    - name: Deploy environment config file from template
+      template:
+        src: files/app.env.j2
+        dest: "{{ app_dir }}/app.env"
+        owner: "{{ app_user }}"
+        mode: "0640"
+
+    - name: Copy application source files
+      copy:
+        src: "../{{ item }}"
+        dest: "{{ app_dir }}/{{ item }}"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+      loop:
+        - app.py
+        - metrics.py
+        - requirements.txt
+        - requirements-ci.txt
+
+    - name: Ensure Docker service is running and enabled
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add app user to docker group
+      user:
+        name: "{{ app_user }}"
+        groups: docker
+        append: yes

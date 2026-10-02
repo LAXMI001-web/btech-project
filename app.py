@@ -13,8 +13,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from model.inference import DATASET_NAMES, get_detector
+from metrics import install_metrics
 
 app = FastAPI(title="FA3-CLIP Deepfake Detector")
+install_metrics(app)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
