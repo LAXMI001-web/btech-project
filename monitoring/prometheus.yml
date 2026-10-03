@@ -4,4 +4,4 @@ scrape_configs:
   - job_name: fa3-clip-detector
     metrics_path: /metrics
     static_configs:
-      - targets: ["app:8000"]
+      - targets: ["localhost:8000"]
